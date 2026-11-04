@@ -1,0 +1,4 @@
+# Shell scripts must keep LF endings: with core.autocrlf=true (the Git for
+# Windows default) they would otherwise be checked out with CRLF, which
+# breaks sh/bash under MSYS2.
+*.sh text eol=lf

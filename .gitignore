@@ -29,3 +29,6 @@ build.vc22/.vs/*
 config.mk
 
 
+
+# lasieve5_64 Windows BOINC build output (build_boinc_windows.sh)
+/factor/lasieve5_64/boinc-win/
