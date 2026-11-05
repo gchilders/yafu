@@ -309,12 +309,23 @@ mpqs3.o: mpqs3.c asm/mpqs-config.h asm/siever-config.h
 
 # --- Executable link rules ---------------------------------------------------
 
-gnfs-lasieve4I%e: gnfs-lasieve4eI%.o if.o input-poly.o libgmp-aux.a redu2.o \
+# The % in this list is the I value: the variable is expanded where the
+# pattern rules below are read, so it acts as their stem.
+LASIEVE_E_PREREQS = gnfs-lasieve4eI%.o if.o input-poly.o libgmp-aux.a redu2.o \
 	recurrence6I%.o fbgen.o fbgen64.o real-poly-aux.o mpqs.o \
 	primgen32.o lasieve-prepn.o pprime_p.o \
 	strategy.o ecm.o mpqs3.o pm1.o microecm.o micropm1.o tinyecm.o \
 	asm/liblasieve.a asm/liblasieveI%.a
+
+gnfs-lasieve4I%e: $(LASIEVE_E_PREREQS)
 	$(LINK) $(CFLAGS) -o $@ $^ $(GMP_LIB) $(BOINC_LIBS) -lm
+
+# Everything gnfs-lasieve4I%e links except GMP, BOINC and the C runtime, as a
+# single relocatable object.  build_boinc_windows.sh renames the symbols of
+# one flavour's .ro and links two flavours into one executable that picks
+# the AVX-512 or generic code path at startup (cpu_dispatch.c).
+gnfs-lasieve4I%e.ro: $(LASIEVE_E_PREREQS)
+	$(CC) -nostdlib -r -o $@ $^
 
 gnfs-lasieve4I%f: gnfs-lasieve4fI%.o if.o input-poly-orig.o libgmp-aux.a redu2.o \
 	recurrence6.o fbgen.o fbgen64.o real-poly-aux.o mpqs.o \

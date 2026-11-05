@@ -7261,6 +7261,9 @@ fail("boinc_init() failed: %d",status);
 return-1;
 }
 fprintf(stderr,"boinc initialized\n");
+/* set by cpu_dispatch.c in the combined generic/AVX-512 executable */
+if(getenv("LASIEVE_CPU_PATH")!=NULL)
+fprintf(stderr,"%s\n",getenv("LASIEVE_CPU_PATH"));
 
 status= boinc_resolve_filename(FILE_WORKUNIT,path_in,sizeof(path_in));
 if(status){
