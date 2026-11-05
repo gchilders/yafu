@@ -1,0 +1,55 @@
+--- a/client/app_test.cpp
++++ b/client/app_test.cpp
+@@ -50,7 +50,8 @@
+ 
+ // define exactly one
+ 
+-#define APP_NONE
++//#define APP_NONE
++#define APP_LASIEVE
+ //#define APP_WSL_WRAPPER
+ //      type    physical            logical             copy?
+ //      app     wsl_wrapper.exe     wsl_wrapper.exe
+@@ -224,6 +225,14 @@
+     );
+ #endif
+ 
++#ifdef APP_LASIEVE
++    // NFS@Home lasieve: one executable, input_data in, output_data out.
++    // LASIEVE_CMDLINE is the work unit's command line; LASIEVE_MEMBOUND
++    // (bytes) its rsc_memory_bound.
++    av->app_files.push_back(
++        *make_file(app->project, "lasieve", NULL, MAIN_PROG, false)
++    );
++#endif
+     // can put other stuff here like
+ #if 0
+     av->gpu_ram = 1e7;
+@@ -249,6 +258,14 @@
+         *make_file(proj, "in", "in", INPUT_FILE, true)
+     );
+ #endif
++#ifdef APP_LASIEVE
++    wu->command_line = getenv("LASIEVE_CMDLINE") ? getenv("LASIEVE_CMDLINE") : "";
++    if (getenv("LASIEVE_MEMBOUND")) wu->rsc_memory_bound = atof(getenv("LASIEVE_MEMBOUND"));
++    wu->rsc_fpops_bound = 1e16;
++    wu->input_files.push_back(
++        *make_file(proj, "job_in", "input_data", INPUT_FILE, false)
++    );
++#endif
+     RESULT *result = make_result(av, wu);
+ 
+ ////////////// OUTPUT FILES /////////////////
+@@ -264,6 +281,12 @@
+     );
+ #endif
+ 
++#ifdef APP_LASIEVE
++    result->output_files.push_back(
++        *make_file(proj, "test_result_0", "output_data", OUTPUT_FILE, false)
++    );
++#endif
++
+     // tell the client not to get work or run benchmarks
+     //
+     cc_config.unsigned_apps_ok = true;

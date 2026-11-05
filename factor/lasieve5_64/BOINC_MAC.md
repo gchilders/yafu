@@ -9,8 +9,8 @@ for NFS@Home's Mac platforms.
 | `arm64-apple-darwin` | native: C in place of the x86-64 assembly | 11.0 |
 
 `build_boinc_mac.sh` also combines the two with `lipo` into universal
-binaries. You can deploy one file per platform (smaller downloads), or
-register the universal file under both platforms.
+binaries, and `package_boinc_mac.sh` registers each universal file under
+both platforms (section 8).
 
 There is no AVX-512 copy yet, so the Mac executables don't take
 `--cpu=`. Adding one needs two Mac-specific changes:
@@ -195,7 +195,8 @@ Tried and not kept, because they gave no gain on an M3:
   and later run only on Penryn or newer CPUs, so SSE4.1 is the baseline.
   Clang already defaults to `-march=penryn` for these targets.
 - **Apple Silicon:** macOS 11.0 or later, natively. The x86_64 build also
-  runs there under Rosetta 2, but it's about 20% slower.
+  runs there under Rosetta 2, but the native build is 1.6 to 1.7 times as
+  fast.
 - **No libraries to ship.** GMP and BOINC are linked statically.
   `otool -L` should show only `/usr/lib/libSystem.B.dylib` and
   `/usr/lib/libc++.1.dylib`.
@@ -287,7 +288,92 @@ directory. It should print " Dropped an incomplete last line" if the kill cut
 a line, and then " Resuming with -f <the last special-q seen>". The relations
 of that last special-q are written again; that's expected.
 
-## 8. Things that bit during the port
+## 8. Packaging for NFS@Home
+
+NFS@Home gets one universal file per app, registered under both Mac
+platforms:
+
+| Siever | App | Version 1.60 file |
+|---|---|---|
+| `gnfs-lasieve4I14e` | `lasieved` | `lasieved_1.60_universal-apple-darwin` |
+| `gnfs-lasieve4I15e` | `lasievee` | `lasievee_1.60_universal-apple-darwin` |
+| `gnfs-lasieve4I16e` | `lasieve5f` | `lasieve5f_1.60_universal-apple-darwin` |
+
+```sh
+sh package_boinc_mac.sh          # VERSION=1.60 and APPS=... to change
+```
+
+This writes `boinc-mac/apps/<app>/1.60/{x86_64,arm64}-apple-darwin/`, each
+holding the file and a `version.xml` that marks it as the main program.
+
+**Why one universal file works on both platforms.** The BOINC client starts
+an app with `execv()` (`client/app_start.cpp`), directly or through the
+`switcher`, and the kernel picks the slice:
+
+- An Intel Mac runs the x86_64 slice.
+- An Apple Silicon Mac with a native client (current BOINC clients are
+  universal; 8.2 is) runs the arm64 slice, whichever of the two platforms
+  the scheduler sent.
+- A Rosetta-translated parent gets the x86_64 slice of a universal binary.
+  So an old Intel-only client on Apple Silicon runs the x86_64 code, as it
+  does today.
+- An Apple Silicon Mac without Rosetta reports only `arm64-apple-darwin`.
+  That's why the file is registered under that platform too.
+
+`update_versions` copies the file into `download/` once and accepts the
+second, identical copy. The only cost is size: 2.9 MB, against 2.0 MB for
+x86_64 alone.
+
+**Apple signing.** Each slice has an ad hoc signature (arm64 macOS runs only
+signed code). Nothing more is needed: files the BOINC client downloads carry
+no quarantine attribute, so Gatekeeper and notarization don't apply.
+
+**BOINC code signing.** Sign each file with the project's code-signing key
+on the signing machine, and put the `.sig` next to the file in both
+platform directories:
+
+```sh
+sign_executable lasieve5f_1.60_universal-apple-darwin code_sign_private \
+    > lasieve5f_1.60_universal-apple-darwin.sig
+```
+
+Then copy `boinc-mac/apps/*` into the project's `apps/` and run
+`update_versions`.
+
+**Testing under a real client.** BOINC's `client/app_test.cpp` runs one job
+without a project. `boinc_app_test_lasieve.patch` adds a lasieve case to it:
+the executable is `projects/app_test/lasieve`, the job file is
+`projects/app_test/job_in` (logical name `input_data`), the output is
+`output_data`, and the environment variable `LASIEVE_CMDLINE` is the work
+unit's command line (`LASIEVE_MEMBOUND`, in bytes, sets its memory bound).
+
+The autotools build doesn't support a macOS client: it leaves out
+`hostinfo_unix.cpp` and links with `-undefined dynamic_lookup`, so the
+client dies at launch on a missing `get_system_uptime`. After `configure`
+(`--disable-server --disable-manager --enable-client --with-ssl=` Homebrew's
+OpenSSL), remove `-Wl,-flat_namespace,-undefined,dynamic_lookup` from
+`client/Makefile` and add `boinc_client-hostinfo_unix.$(OBJEXT)` to
+`am_boinc_client_OBJECTS`. Run it in its own data directory with its own
+`--gui_rpc_port` so it leaves an installed client alone, and with a
+`global_prefs_override.xml` that sets `run_on_batteries` and
+`run_if_user_active` on a laptop.
+
+Checked this way with the 1.60 universal files under BOINC 8.3.0:
+
+- 14e, `nfs512` `-a -f 15300000 -c 200`: 18 s on Apple Silicon, the same
+  539 relations as a standalone run. The x86_64 slice under the same client
+  (via Rosetta) took 28 s for the same 539.
+- 16e, `nfs631` `-a -f 50000000 -c 60`: suspended with `boinccmd
+  --set_run_mode never` (CPU time stayed still) and resumed; then the
+  client quit mid-task, which stopped the app, and restarted. The task
+  resumed from its output file and finished with the same 179 distinct
+  relations as an uninterrupted run. Resume re-sieves the last special-q
+  in the file, so the relations of that q appear twice (101 here); that's
+  the same on every platform and goes away in filtering.
+- The code in each universal slice is byte-identical to the single-arch
+  build; only the ad hoc signatures differ.
+
+## 9. Things that bit during the port
 
 - **`fopen(..., "ab+")`.** Where reading starts in append-update mode is up to
   the C library. glibc and the Windows CRT start at the beginning of the file;
