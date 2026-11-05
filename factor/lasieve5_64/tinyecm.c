@@ -47,8 +47,9 @@ either expressed or implied, of the FreeBSD Project.
 #define base_digits 2
 
 /* Always: the portable mulmod128 (used when USE_MULX is off) needs
-   _addcarry_u64.  Including the header enables no instructions. */
-#include <immintrin.h>
+   _addcarry_u64.  Including the header enables no instructions; on
+   non-x86 targets it supplies portable _addcarry_u64 and friends. */
+#include "x86-intrin-compat.h"
 
 // aligned memory allocation
 #if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
@@ -288,7 +289,11 @@ typedef struct
     uint64_t rho;
 } monty128_t;
 
+/* x86-64 inline asm; elsewhere the portable C paths below are used, with
+   _umul128 and the carry intrinsics from x86-intrin-compat.h. */
+#if defined(__x86_64__)
 #define GCC_ASM64X
+#endif
 /* The mulx inline asm needs BMI2 (Haswell / Excavator and later).  Use it
    only when the compiler is targeting BMI2; otherwise a baseline x86-64
    build dies with an illegal instruction on older CPUs as soon as a
@@ -303,9 +308,10 @@ void mulmod128(uint64_t* u, uint64_t* v, uint64_t* w, monty128_t* mdata);
 void sqrmod128(uint64_t* u, uint64_t* w, monty128_t* mdata);
 void addmod128(uint64_t* u, uint64_t* v, uint64_t* w, uint64_t* n);
 void submod128(uint64_t* u, uint64_t* v, uint64_t* w, uint64_t* n);
-__inline uint64_t _umul128(uint64_t x, uint64_t y, uint64_t* hi);
 
 #ifdef GCC_ASM64X
+__inline uint64_t _umul128(uint64_t x, uint64_t y, uint64_t* hi);
+
 __inline uint64_t _umul128(uint64_t x, uint64_t y, uint64_t* hi)
 {
     __asm__(

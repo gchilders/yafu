@@ -24,7 +24,7 @@
 #include "mpqs.h"
 #include "mpqs3.h"
 
-#include <immintrin.h>
+#include "x86-intrin-compat.h"
 
 extern char*input_line;
 extern size_t input_line_alloc;

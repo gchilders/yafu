@@ -12,7 +12,7 @@
 #define i_bits (I_bits-1)
 #define n_i (1<<i_bits)
 
-#include <immintrin.h>
+#include "../x86-intrin-compat.h"
 #include <stdlib.h>
 
 
@@ -60,6 +60,10 @@ ij_ub= n1_j<<i_bits;
 
 printf("does this get called?\n");
 
+#ifndef LASIEVE_X86_ASM
+/* never used, and has no C version */
+abort();
+#else
 switch(ot){
 case 0:
 return lasched0_1(ri,ij_ptr,ij_ptr_ub,n1_j,sched_ptr,fbi_offs);
@@ -70,6 +74,7 @@ return lasched2_1(ri,ij_ptr,ij_ptr_ub,n1_j,sched_ptr,fbi_offs);
 default:
 return lasched3_1(ri,ij_ptr,ij_ptr_ub,n1_j,sched_ptr,fbi_offs);
 }
+#endif
 
 
 /*
@@ -123,7 +128,8 @@ u32_t*ri,*ij_ptr,*ij_ptr_ub,n1_j,**sched_ptr,fbi_offs,ot,FBsize;
 #line 95 "lasched.w"
 
 
-#if !defined(AVX512_LASCHED)
+/* without x86 assembly (arm64) the C loops below do the work */
+#if !defined(AVX512_LASCHED) && defined(LASIEVE_X86_ASM)
 	switch (ot) {
 	case 0:
 		return lasched0(ri, ij_ptr, ij_ptr_ub, n1_j, sched_ptr, fbi_offs);
@@ -255,13 +261,15 @@ u32_t*ri,*ij_ptr,*ij_ptr_ub,n1_j,**sched_ptr,fbi_offs,ot,FBsize;
 
 			ij = *ij_ptr;
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[RI_OFFSET1];
 			while (ij < ij_ub) {
 				u16_t i;
 
 				*(sched_ptr[ij >> L1_BITS]++) = (fbi_offs << U16_SHIFT) | (ij & (L1_SIZE - 1));
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[RI_OFFSET1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += RI_INCR;
 			*(ij_ptr++) = ij - ij_ub;
@@ -443,13 +451,15 @@ u32_t*ri,*ij_ptr,*ij_ptr_ub,n1_j,**sched_ptr,fbi_offs,ot,FBsize;
 			}/*:3*/
 #line 85 "lasched.w"
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[RI_OFFSET1];
 			while (ij < ij_ub) {
 				u16_t i;
 
 				*(sched_ptr[ij >> L1_BITS]++) = (fbi_offs << U16_SHIFT) | (ij & (L1_SIZE - 1));
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[RI_OFFSET1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += RI_INCR;
 			*(ij_ptr++) = ij - ij_ub;

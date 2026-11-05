@@ -33,7 +33,7 @@
 #endif
 
 // BRB: support for avx512 intrinsics
-#include <immintrin.h>
+#include "x86-intrin-compat.h"
 #include <stdint.h>
 
 #ifdef _WIN64
@@ -4537,8 +4537,10 @@ nss+= n_strips;
                                     //    23, 22, 21, 20, 19, 18, 17, 16,
                                     //    15, 14, 13, 12, 11, 10, 9, 8,
                                     //    7, 6, 5, 4, 3, 2, 1, 0);
+#if defined(AVX512_SIEVE_SEARCH) && (CANDIDATE_SEARCH_STEPS == 128)
                                     __m512i vincr = _mm512_load_si512(incr);
                                     __m512i vincr32 = _mm512_set1_epi16(32);
+#endif
 
                                     srbs = sieve_report_bounds[s][j_offset / CANDIDATE_SEARCH_STEPS];
                                     ncand = 0;

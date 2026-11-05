@@ -162,3 +162,24 @@ static ushort mpqs3_param[15][7]={
 
 #define MOD3
 
+
+/* The MPQS assembly is x86-64 only.  Elsewhere (arm64) use the C code that
+   each of these switches replaces, with the plain (non-XMM) data layout. */
+#if !defined(__x86_64__)
+#undef HAVE_XMM_MUL
+#undef ASM_MPQS_TD
+#undef A64_STYLE_TD
+#undef ASM_MPQS_SIEVE
+#undef ASM_MPQS_EVAL
+#undef ASM_MPQS_SIEVE_INIT
+#undef ASM_MPQS_SIEVE_INIT16
+#undef ASM_MPQS_NEXT_POL
+#undef ASM_MPQS_GAUSS
+#undef ASM_MPQS3_NEXT_POL
+#undef ASM_MPQS3_TD
+#undef ASM_MPQS3_TDSIEVE
+#undef ASM_MPQS3_SIEVE
+#undef ASM_MPQS3_SIEVE_INIT
+#undef ASM_MPQS3_EVAL
+#undef ASM_MPQS3_GAUSS
+#endif

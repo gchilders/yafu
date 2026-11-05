@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "if.h"
-#include <immintrin.h>
+#include "x86-intrin-compat.h"
 #include "avx512_aux.h"
 
 #include <fenv.h>

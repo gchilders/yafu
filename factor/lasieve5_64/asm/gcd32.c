@@ -17,6 +17,19 @@ u32_t gcd32(u32_t x, u32_t y)
   u32_t r;
   if(!x) return y;
   if(!y) return x;
+#if !defined(__x86_64__)
+  /* binary gcd, as the asm below */
+  {
+    int shift = __builtin_ctz(x | y);
+    x >>= __builtin_ctz(x);
+    do {
+      y >>= __builtin_ctz(y);
+      if (x > y) { u32_t t = x; x = y; y = t; }
+      y -= x;
+    } while (y);
+    r = x << shift;
+  }
+#else
   __asm__ volatile ( "movl %%esi,%%eax\n"
                      "bsfl %%esi,%%ecx\n"
                      "bsfl %%edi,%%edx\n"
@@ -43,5 +56,6 @@ u32_t gcd32(u32_t x, u32_t y)
                      "2:\n"
                      "movl %%edx,%%ecx\n"
                      "shll %%cl,%%eax\n" : "=a"(r) : "S"(y), "D"(x) : "rcx", "rdx");
+#endif
   return r;
 }

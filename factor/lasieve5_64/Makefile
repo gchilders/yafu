@@ -28,7 +28,8 @@
 #   DEBUG         Set to 1 for a debug build
 #
 # Target CPU (also forwarded to asm/):
-#   ARCH          -march value                (default: native)
+#   ARCH          -march value                (default: native; empty for
+#                 none, e.g. arm64 macOS, where clang's default is the M1)
 #   TUNE          -mtune value                (default: none)
 #                 For distributable binaries use e.g. ARCH=x86-64 TUNE=generic,
 #                 or ARCH=x86-64-v4 TUNE=generic AVX512_ALL=1.
@@ -73,7 +74,7 @@ TUNE       ?=
 
 TARGET_FLAGS ?=
 
-ARCH_FLAGS := -march=$(ARCH) $(if $(TUNE),-mtune=$(TUNE))
+ARCH_FLAGS := $(if $(ARCH),-march=$(ARCH)) $(if $(TUNE),-mtune=$(TUNE))
 
 ifndef DETECTED_OS
     ifeq ($(OS),Windows_NT)

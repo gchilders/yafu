@@ -12,7 +12,7 @@
 #define i_bits (I_bits-1)
 #define n_i (1<<i_bits)
 
-#include <immintrin.h>
+#include "../x86-intrin-compat.h"
 
 #define U16_SHIFT (CHAR_BIT*sizeof(u16_t))
 
@@ -53,7 +53,9 @@ medsched_1(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub, u32_t ot, u32_t FBsize,
 		ot_tester = (ot & 1) | ((ot & 2) << (i_bits - 1));
 		ot_mask = n_i | 1;
 	}
+#ifdef LASIEVE_X86_ASM
 	else return medsched0_1(ri, ij_ptr, ij_ptr_ub, si, lo);
+#endif
 #endif
 
 	if (ot == 0)
@@ -161,14 +163,16 @@ medsched_1(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub, u32_t ot, u32_t FBsize,
 			}/*:3*/
 #line 65 "medsched.w"
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[1];
 			while (ij < L1_SIZE) {
 				u16_t i;
 
 				si[ij] += lo;
 
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += 2;
 			*(ij_ptr++) = ij - L1_SIZE;
@@ -303,14 +307,16 @@ medsched_1(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub, u32_t ot, u32_t FBsize,
 			}/*:3*/
 	#line 65 "medsched.w"
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[1];
 			while (ij < L1_SIZE) {
 				u16_t i;
 
 				si[ij] += lo;
 
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += 2;
 			*(ij_ptr++) = ij - L1_SIZE;
@@ -340,7 +346,9 @@ medsched(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub,
 		ot_tester = (ot & 1) | ((ot & 2) << (i_bits - 1));
 		ot_mask = n_i | 1;
 	}
+#ifdef LASIEVE_X86_ASM
 	else return medsched0(ri, ij_ptr, ij_ptr_ub, sched_ptr, fbi_offs);
+#endif
 #endif
 
 	if (ot == 0)
@@ -424,13 +432,15 @@ medsched(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub,
 			b = n_i - (ri[RI_OFFSET1] & (n_i - 1));
 			ij = *ij_ptr;
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[RI_OFFSET1];
 			while (ij < L1_SIZE) {
 				u16_t i;
 
 				*(sched++) = (fbi_offs << U16_SHIFT) | ij;
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[RI_OFFSET1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += RI_INCR;
 			*(ij_ptr++) = ij - L1_SIZE;
@@ -557,13 +567,15 @@ medsched(u32_t* ri, u32_t* ij_ptr, u32_t* ij_ptr_ub,
 				ij = (ij + ((~ot_tester) & n_i)) / 2;
 			}
 
+			/* the two steps in locals and without branches: they are close
+			   to random, and the stores through sched might alias ri */
+			u32_t r0 = ri[0], r1 = ri[RI_OFFSET1];
 			while (ij < L1_SIZE) {
 				u16_t i;
 
 				*(sched++) = (fbi_offs << U16_SHIFT) | ij;
 				i = ij & (n_i - 1);
-				if (i < b)ij += ri[0];
-				if (i >= a)ij += ri[RI_OFFSET1];
+				ij += (i < b ? r0 : 0) + (i >= a ? r1 : 0);
 			}
 			ri += RI_INCR;
 			*(ij_ptr++) = ij - L1_SIZE;

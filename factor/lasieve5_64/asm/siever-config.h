@@ -55,6 +55,13 @@ typedef unsigned long ulong;
 
 int asm_cmp(ulong*a,ulong*b);
 
+/* The assembly in asm/ is x86-64 only.  Elsewhere (arm64) the siever uses
+   the C versions that these switches otherwise replace. */
+#if defined(__x86_64__)
+#define LASIEVE_X86_ASM
+#endif
+
+#ifdef LASIEVE_X86_ASM
 #define HAVE_ASM_GETBC
 void ASM_ATTR asm_getbc(u32_t,u32_t,u32_t,u32_t*,u32_t*,u32_t*,u32_t*);
 #define ASM_SCHEDSIEVE
@@ -99,6 +106,9 @@ unsigned char*,unsigned char*,u16_t*,unsigned char*);
 #define HAVE_MM_LASIEVE_SETUP_64
 #define  MAX_FB_PER_P 2
 #define ASM_RESCALE
+#else
+#define  MAX_FB_PER_P 2
+#endif /* LASIEVE_X86_ASM */
 
 
 #if 1

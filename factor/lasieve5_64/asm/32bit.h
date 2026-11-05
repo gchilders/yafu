@@ -9,6 +9,45 @@
   02111-1307, USA.
 */
 
+#if !defined(__x86_64__)
+/* No x86-64 assembly (arm64): the same functions in C.  asm_modinv32 is in
+   c-arith.c. */
+
+volatile extern u32_t modulo32;
+u32_t gcd32(u32_t x, u32_t y);
+int jac32(u32_t x,u32_t y);
+u32_t modpow32(u32_t x,u32_t a);
+u32_t modsqrt32(u32_t x);
+u32_t ASM_ATTR asm_modinv32(u32_t x);
+
+#define modinv32(x) asm_modinv32(x)
+
+static inline u32_t modsq32(u32_t x)
+{
+  return (u32_t)(((u64_t)x*x)%modulo32);
+}
+
+static inline u32_t modmul32(u32_t x,u32_t y)
+{
+  return (u32_t)(((u64_t)x*y)%modulo32);
+}
+
+static inline u32_t modadd32(u32_t x,u32_t y)
+{
+  u64_t s=(u64_t)x+y;
+  u32_t m=modulo32;
+  return (u32_t)(s>=m ? s-m : s);
+}
+
+/* first argument minus second, as the x86 version */
+static inline u32_t modsub32(u32_t subtrahend,u32_t minuend)
+{
+  u32_t m=modulo32;
+  return subtrahend>=minuend ? subtrahend-minuend : subtrahend+(m-minuend);
+}
+
+#else
+
 volatile extern u32_t modulo32;
 u32_t gcd32(u32_t x, u32_t y);
 int jac32(u32_t x,u32_t y);
@@ -83,3 +122,5 @@ static inline u32_t modsub32(u32_t subtrahend,u32_t minuend)
 }
 
 #undef modulo32
+
+#endif /* __x86_64__ */

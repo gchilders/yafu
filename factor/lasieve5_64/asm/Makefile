@@ -50,7 +50,7 @@ TUNE       ?=
 
 TARGET_FLAGS ?=
 
-ARCH_FLAGS := -march=$(ARCH) $(if $(TUNE),-mtune=$(TUNE))
+ARCH_FLAGS := $(if $(ARCH),-march=$(ARCH)) $(if $(TUNE),-mtune=$(TUNE))
 
 ifndef DETECTED_OS
     ifeq ($(OS),Windows_NT)
@@ -171,7 +171,16 @@ all: liblasieve.a \
 gcd32.o mpqs.o psp.o MMX-TD.o lasched.o: siever-config.h
 
 
+# --- Target: x86-64 or not ---------------------------------------------------
+# The .asm files are x86-64 only.  For any other target (arm64) the libraries
+# hold just the C files, and siever-config.h turns off the ASM_* switches so
+# the siever uses its C versions.  Ask the compiler, so that cross builds
+# (-arch x86_64 on an arm64 Mac, or the reverse) are detected correctly.
+X86_64 := $(shell echo __x86_64__ | $(CC) $(TARGET_FLAGS) -E -P - 2>/dev/null | tr -d ' ')
+
+
 # --- liblasieve.a (core sieve objects) ---------------------------------------
+ifeq ($(X86_64),1)
 liblasieve.a: \
 	gcd32.o psp.o pt64.o modinv1000.o ri-aux.o mpz-trialdiv.o \
 	asm_64bit.o \
@@ -184,6 +193,14 @@ liblasieve.a: \
 	asm_arith192.o mpqs3_sieve.o mpqs3_nextpol.o mpqs3_td.o \
 	mpqs3_gauss.o
 	ar rcs $@ $^
+else
+CFLAGS := $(filter-out -m64,$(CFLAGS))
+
+liblasieve.a: \
+	gcd32.o psp.o mpz-trialdiv.o zeit.o invtab.o \
+	noasm64.o basemath.o montgomery_mul.o c-arith.o
+	ar rcs $@ $^
+endif
 
 
 # --- I-parameterised .s generation rules ------------------------------------
@@ -260,6 +277,7 @@ search0I%.s: ls-defs-os.asm search0.asm
 
 
 # --- liblasieveI%.a (I-parameterised sieve library) -------------------------
+ifeq ($(X86_64),1)
 liblasieveI%.a: \
 	laschedI%.o lasched0I%.o lasched1I%.o lasched2I%.o \
 	lasched3I%.o lasched0ntI%.o lasched1ntI%.o lasched2ntI%.o \
@@ -267,6 +285,10 @@ liblasieveI%.a: \
 	slinieI%.o slinie3I%.o slinie2I%.o slinie1I%.o \
 	tdslinieI%.o tdslinie1I%.o tdslinie2I%.o tdslinie3I%.o
 	ar rcs $@ $^
+else
+liblasieveI%.a: laschedI%.o medschedI%.o
+	ar rcs $@ $^
+endif
 
 
 # --- Utility -----------------------------------------------------------------

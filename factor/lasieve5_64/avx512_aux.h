@@ -1,5 +1,5 @@
 #pragma once
-#include <immintrin.h>
+#include "x86-intrin-compat.h"
 
 
 #if defined( __GNUC__ ) && defined(_WIN64)

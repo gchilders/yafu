@@ -68,6 +68,11 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #  include <immintrin.h>
 #endif
 
+/* non-x86 (arm64): portable _subborrow_u64 for the C submod paths */
+#if !defined(__x86_64__) && !defined(_M_X64)
+#  include "x86-intrin-compat.h"
+#endif
+
 
 // Using the inline asm in this file can increase performance by ~20-25%
 // (surprisingly).  Hence these macros are defined by default.

@@ -18,10 +18,11 @@
 #include <sys/types.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include "asm/siever-config.h"
 #include "if.h"
 #include "recurrence6.h"
-#include <immintrin.h>
+#include "x86-intrin-compat.h"
 
 #ifdef _MSC_VER
 // so that I can read the code in MSVC without it being grayed out.
