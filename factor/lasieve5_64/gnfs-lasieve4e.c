@@ -64,6 +64,18 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h> 
+
+#if defined(__APPLE__)
+/* clock() is getrusage(), a system call, and the siever calls it several
+   times per subsieve for its -v statistics: 3% of an I16 run on an M3.  The
+   statistics only need intervals, so read the uptime counter instead, which
+   needs no system call (macOS 10.12 and later). */
+static inline clock_t lasieve_clock(void)
+{
+    return (clock_t)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / (1000000000ULL / CLOCKS_PER_SEC));
+}
+#define clock() lasieve_clock()
+#endif
 #include <ctype.h> 
 #ifdef LINUX
 #include <endian.h> 

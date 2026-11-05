@@ -1300,3 +1300,83 @@ done:
 
 
 #endif
+
+#if !defined(LASIEVE_X86_ASM) && !defined(CONTIGUOUS_RI)
+/* Without x86 assembly (arm64): get_recurrence_info for SETUP_LANES primes
+   at once, with exactly its arithmetic and results.  The partial Euclid is
+   run in lockstep for all of them: a chain of dependent divisions with an
+   unpredictable end, so several side by side overlap the divisions and
+   share the mispredicted loop exits. */
+#if I_bits == 16
+typedef u64_t rec_t;
+typedef i64_t rec_d;
+#else
+typedef u32_t rec_t;
+typedef i32_t rec_d;
+#endif
+
+static inline void rec_finish(u32_t* res_ptr, rec_t b, rec_t s, rec_t c, rec_t t)
+{
+    rec_d d;
+
+    d = t - s;
+    s = (s <= 2 * ub ? s : 2 * ub + 2 - (s & 1));
+    if (t > 2 * ub) {
+        if (d < 0 || d > 2 * ub)
+            d = 2 * ub + 2 + (s & 1) - (t & 1);
+        t = s + d;
+    }
+#if I_bits == 16
+    if (((s << A_bits) + b) > (1ULL << 32)) {
+        printf("s too big\b");
+        exit(1);
+    }
+    if (((t << A_bits) - c) > (1ULL << 32)) {
+        printf("t too big\b");
+        exit(1);
+    }
+#endif
+    res_ptr[0] = (u32_t)((s << A_bits) + b);
+    res_ptr[1] = (u32_t)((t << A_bits) - c);
+}
+
+/* res_ptr[2*l..2*l+1] for (p[l], r[l]); returns 2*SETUP_LANES */
+u32_t get_recurrence_info_n(u32_t* res_ptr, const u32_t* p, const u32_t* r, u32_t FBsize)
+{
+    enum { L = SETUP_LANES };
+    rec_t b[L], s[L], c[L], t[L];
+    int done[L], l, all;
+
+    for (l = 0; l < L; l++)
+        if (r[l] == 0 || r[l] >= p[l]) {
+            for (l = 0; l < L; l++)
+                get_recurrence_info(res_ptr + 2 * l, p[l], r[l], FBsize);
+            return 2 * L;
+        }
+    for (l = 0; l < L; l++) {
+        b[l] = r[l]; s[l] = 1; c[l] = p[l]; t[l] = 0; done[l] = 0;
+    }
+    for (;;) {
+        all = 1;
+        for (l = 0; l < L; l++) {
+            rec_t fin = b[l] < A, k = (c[l] - A * fin) / b[l] + fin;
+            if (!done[l]) { c[l] -= k * b[l]; t[l] += k * s[l]; done[l] = fin; }
+            all &= done[l];
+        }
+        if (all)
+            break;
+        all = 1;
+        for (l = 0; l < L; l++) {
+            rec_t fin = c[l] < A, k = (b[l] - A * fin) / c[l] + fin;
+            if (!done[l]) { b[l] -= k * c[l]; s[l] += k * t[l]; done[l] = fin; }
+            all &= done[l];
+        }
+        if (all)
+            break;
+    }
+    for (l = 0; l < L; l++)
+        rec_finish(res_ptr + 2 * l, b[l], s[l], c[l], t[l]);
+    return 2 * L;
+}
+
+#endif

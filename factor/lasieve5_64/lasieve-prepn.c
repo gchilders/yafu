@@ -375,6 +375,150 @@ __m512i modsub32_16(__m512i z, __mmask16 ndmsk, __m512i x, __m512i y, __m512i p)
 #endif
 
 
+#if !defined(LASIEVE_X86_ASM) && !defined(AVX512_LASIEVE_SETUP)
+/* Without x86 assembly (arm64): the same results as the code in
+   lasieve_setup below, computed SETUP_LANES (recurrence6.h) factor base
+   primes at a time.  Each prime needs a modular inverse and then
+   get_recurrence_info, two chains of dependent divisions with
+   unpredictable ends; running several in lockstep overlaps the divisions
+   and shares the mispredicted loop exits.  8 lanes was fastest on an M3
+   (I14 test job: 16.3 s with 2 lanes, 15.0 s with 4, 14.9 s with 8,
+   16.0 s with 16). */
+
+/* a mod p, for a = (neg ? -absa : absa); small: absa < p */
+static inline u32_t c2_res(u32_t absa, int neg, u32_t p, int small)
+{
+	u32_t r = small ? absa : absa % p;
+	return (neg && r) ? p - r : r;
+}
+
+static inline u32_t c2_mul(u32_t a, u32_t b, u32_t p)
+{
+	return (u32_t)(((u64_t)a * b) % p);
+}
+
+static inline u32_t c2_sub(u32_t a, u32_t b, u32_t p)
+{
+	return a >= b ? a - b : a + (p - b);
+}
+
+/* 1/x mod p for 0 < x < p, gcd 1: extended Euclid on (p, x) with the
+   cofactors kept unsigned; their sign alternates, so the result is t or
+   p - t by the parity of the number of steps. */
+static inline u32_t c2_inv(u32_t x, u32_t p)
+{
+	u32_t r0 = p, r1 = x, t0 = 0, t1 = 1, n = 0;
+	while (r1 > 1) {
+		u32_t q = r0 / r1, r = r0 - q * r1, t = t0 + q * t1;
+		r0 = r1; r1 = r; t0 = t1; t1 = t; n++;
+	}
+	if (r1 != 1)
+		Schlendrian("modular inversion of %u mod %u failed\n", x, p);
+	return (n & 1) ? p - t1 : t1;
+}
+
+/* SETUP_LANES inverses in lockstep */
+static inline void cn_inv(const u32_t* x, const u32_t* p, u32_t* inv)
+{
+	enum { L = SETUP_LANES };
+	u32_t r0[L], r1[L], t0[L], t1[L], n[L];
+	int l;
+
+	for (l = 0; l < L; l++) {
+		r0[l] = p[l]; r1[l] = x[l]; t0[l] = 0; t1[l] = 1; n[l] = 0;
+	}
+	for (;;) {
+		int any = 0;
+		for (l = 0; l < L; l++) any |= r1[l] > 1;
+		if (!any) break;
+		for (l = 0; l < L; l++) {
+			int a = r1[l] > 1;
+			u32_t q = r0[l] / r1[l], r = r0[l] - q * r1[l], t = t0[l] + q * t1[l];
+			r0[l] = a ? r1[l] : r0[l]; r1[l] = a ? r : r1[l];
+			t0[l] = a ? t1[l] : t0[l]; t1[l] = a ? t : t1[l]; n[l] += a;
+		}
+	}
+	for (l = 0; l < L; l++) {
+		if (r1[l] != 1)
+			Schlendrian("modular inversion of %u mod %u failed\n", x[l], p[l]);
+		inv[l] = (n[l] & 1) ? p[l] - t1[l] : t1[l];
+	}
+}
+
+/* x for one prime, as the scalar code in lasieve_setup */
+static inline u32_t c2_x1(u32_t p, u32_t r, u32_t A0, u32_t A1, u32_t B0, u32_t B1)
+{
+	u32_t x;
+	if (r == p) {
+		x = B0;
+		if (x == 0) return p;
+		x = c2_mul(c2_inv(x, p), B1, p);
+		return x > 0 ? p - x : x;
+	}
+	x = c2_sub(A0, c2_mul(r, B0, p), p);
+	if (x == 0) return p;
+	return c2_mul(c2_inv(x, p), c2_sub(c2_mul(r, B1, p), A1, p), p);
+}
+
+static void
+lasieve_setup_c2(u32_t* FB, u32_t* proots, u32_t fbsz, i32_t a0, i32_t a1, i32_t b0, i32_t b1,
+	u32_t* ri_ptr, u32_t FBsize)
+{
+	u32_t absa0 = a0 >= 0 ? (u32_t)a0 : (u32_t)(-(i64_t)a0);
+	u32_t absa1 = a1 >= 0 ? (u32_t)a1 : (u32_t)(-(i64_t)a1);
+	int neg0 = a0 < 0, neg1 = a1 < 0;
+	u32_t ub0 = (u32_t)b0, ub1 = (u32_t)b1;
+	u32_t bound = absa0;
+	u32_t fbi;
+
+	if (bound < absa1) bound = absa1;
+	if (bound < ub0) bound = ub0;
+	if (bound < ub1) bound = ub1;
+
+	for (fbi = 0; fbi + SETUP_LANES <= fbsz; fbi += SETUP_LANES) {
+		enum { L = SETUP_LANES };
+		u32_t p[L], d[L], nu[L], x[L], iv[L];
+		int l, ok = 1;
+
+		for (l = 0; l < L; l++) {
+			u32_t pp = FB[fbi + l], rr = proots[fbi + l];
+			int sm = pp > bound;
+			u32_t A0 = c2_res(absa0, neg0, pp, sm), A1 = c2_res(absa1, neg1, pp, sm);
+			u32_t B0 = c2_res(ub0, 0, pp, sm), B1 = c2_res(ub1, 0, pp, sm);
+			p[l] = pp;
+			if (rr == pp) {
+				ok = 0;
+				d[l] = 1; nu[l] = 0;
+			} else {
+				d[l] = c2_sub(A0, c2_mul(rr, B0, pp), pp);
+				nu[l] = c2_sub(c2_mul(rr, B1, pp), A1, pp);
+				ok &= d[l] != 0;
+			}
+		}
+		if (ok) {
+			cn_inv(d, p, iv);
+			for (l = 0; l < L; l++)
+				x[l] = c2_mul(iv[l], nu[l], p[l]);
+		} else {
+			for (l = 0; l < L; l++) {
+				u32_t pp = p[l];
+				int sm = pp > bound;
+				x[l] = c2_x1(pp, proots[fbi + l], c2_res(absa0, neg0, pp, sm),
+					c2_res(absa1, neg1, pp, sm), c2_res(ub0, 0, pp, sm), c2_res(ub1, 0, pp, sm));
+			}
+		}
+		ri_ptr += get_recurrence_info_n(ri_ptr, p, x, FBsize);
+	}
+	for (; fbi < fbsz; fbi++) {
+		u32_t p = FB[fbi];
+		int sm = p > bound;
+		u32_t x = c2_x1(p, proots[fbi], c2_res(absa0, neg0, p, sm), c2_res(absa1, neg1, p, sm),
+			c2_res(ub0, 0, p, sm), c2_res(ub1, 0, p, sm));
+		ri_ptr += get_recurrence_info(ri_ptr, p, x, FBsize);
+	}
+}
+#endif
+
 void
 lasieve_setup(u32_t* FB, u32_t* proots, u32_t fbsz, i32_t a0, i32_t a1, i32_t b0, i32_t b1,
 	u32_t* ri_ptr, u32_t FBsize)
@@ -385,6 +529,11 @@ lasieve_setup(u32_t* FB, u32_t* proots, u32_t fbsz, i32_t a0, i32_t a1, i32_t b0
 		Schlendrian("lasieve_setup called with negative 2-nd coordinate (%d,%d)\n",
 			b0, b1);
 	if (fbsz <= 0)return;
+
+#if !defined(LASIEVE_X86_ASM) && !defined(AVX512_LASIEVE_SETUP)
+	lasieve_setup_c2(FB, proots, fbsz, a0, a1, b0, b1, ri_ptr, FBsize);
+	return;
+#endif
 
 #if !defined(AVX512_LASIEVE_SETUP) && defined( HAVE_ASM_LASIEVE_SETUP)
 	/*7:*/

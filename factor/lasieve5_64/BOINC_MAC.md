@@ -148,6 +148,47 @@ The C code had two performance problems on arm64, both fixed:
 - `modinv32.c`'s binary inversion was about a third of the run time; it is
   replaced by `asm_modinv32` in `c-arith.c`.
 
+### Tuning for Apple Silicon
+
+These changes apply only when the target isn't x86-64, so the x86-64
+builds are unchanged. The output has exactly the same relations as the x86-64
+build; only the order of some primes within a relation differs.
+
+- **Larger schedule regions** (`asm/siever-config.c`, `SCHED_SIZEBITS_SHIFT`,
+  default 2 for 14e and 15e, 1 for 16e). Each large-prime schedule covers a
+  region 2 or 4 times the x86 size, so there are fewer passes over each
+  part of the factor base. This costs memory, which matters for 16e. On a
+  degree-6 SNFS job with rlim 250M and alim 350M, q above the factor base
+  limit, peak memory per task is about 1.0 GB at shift 0 (the x86 sizes),
+  1.1 GB at shift 1 and 1.3–1.45 GB at shift 2. Shifts 1 and 2 are 9% and
+  14% faster than 0. 16e uses shift 1, so that more tasks fit on 8 GB
+  Macs: BOINC by default lets all tasks together use 50% of RAM while the
+  computer is in use and 90% when it's idle. The table in `siever-config.c`
+  has the measurements, including R942. Build with
+  `-DSCHED_SIZEBITS_SHIFT=n` to choose another.
+- **Lattice setup, several primes at once** (`lasieve-prepn.c`,
+  `recurrence6.c`, `SETUP_LANES`, default 8). For each factor base prime, the
+  setup does a modular inverse and then `get_recurrence_info`. Both are chains
+  of dependent divisions with an unpredictable end. They now run for 8 primes
+  in lockstep, which overlaps the divisions and shares the mispredicted loop
+  exits. The results are bit for bit the same as before.
+- **Bucket scheduling, several primes at once** (`asm/lasched.c`,
+  `LASCHED_LANES`, default 3). Three primes are walked side by side. Entries
+  within a bucket piece come out in a different order, which nothing depends
+  on.
+- **A cheap `clock()`** (`gnfs-lasieve4e.c`, Apple only). The `-v`
+  statistics call `clock()` several times per subsieve, and on macOS that is
+  a `getrusage` system call. The Apple build reads the uptime counter instead.
+
+Tried and not kept, because they gave no gain on an M3:
+- LTO and profile-guided optimisation.
+- `L1_BITS=16` to match the larger L1: large-prime sieving got faster, but
+  `medsched` slowed by as much.
+- A fixed number of branch-free steps per prime in `lasched`.
+- Software prefetch and non-temporal stores in `lasched`.
+- Interleaving primes in `medsched`.
+- `NO_TD_CLOCK`, which made I16 8% slower.
+
 ## 6. What the executables need at run time
 
 - **Intel:** macOS 10.13 or later, on any Intel Mac that runs it. macOS 10.12
@@ -198,14 +239,31 @@ The tests:
 - I16 `R942_poly.txt` with `-r -f 325000000 -c 40`, where both builds
   ran MPQS 4669 times and MPQS3 1926 times
 
-Times on an M3, native arm64 against x86_64 under Rosetta:
+Throughput on a fanless MacBook Air M3 (4 performance and 4 efficiency
+cores) with all cores busy. Eight jobs ran at once on disjoint special-q
+ranges; the figures are relations per second, summed over the jobs:
 
 | Job | arm64 | x86_64 (Rosetta) |
 |---|---|---|
-| I14 `nfs512`, `-c 200` | 20 s | 24–25 s |
-| I15 SNFS, `-c 100` | 58 s | 72 s |
-| I16 `nfs631`, `-c 60` | 57 s | 73 s |
-| I16 `R942`, `-c 40` | 97 s | 127 s |
+| I14 `nfs512`, 8 × `-c 300` | 236 | 140 |
+| I16 `nfs631`, 8 × `-c 25` | 11.7 | 7.3 |
+
+That's about 1.7 times the throughput of the x86_64 build under Rosetta
+for 14e and 1.6 times for 16e. 16e would reach 12.6 with shift 2, at the
+cost of memory (section 5). The untuned port, before the changes in
+section 5, managed 175 and 9.4.
+
+Single job:
+
+| Job | arm64 | x86_64 (Rosetta) |
+|---|---|---|
+| I14 `nfs512`, `-c 200` | 13.8 s | 23.5 s |
+| I16 `nfs631`, `-c 60` | 42.0 s, 391 MB | 68.3 s, 316 MB |
+| I16 `R942`, `-c 100` | 142 s, 2.23 GB | 216 s, 1.94 GB |
+
+Startup (building the factor base) is included in each single-job time.
+For R942 that's about 53 s. The extra memory on arm64 comes from the larger
+schedule regions (section 5).
 
 **Instruction set (x86_64).** Nothing beyond SSE4.1 should appear outside
 GMP's runtime-dispatched routines. Use the unstripped executable:

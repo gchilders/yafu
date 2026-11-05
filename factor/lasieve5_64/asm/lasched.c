@@ -18,6 +18,10 @@
 
 #define U16_SHIFT (CHAR_BIT*sizeof(u16_t))
 
+#ifndef LASCHED_LANES
+#define LASCHED_LANES 3   /* fastest on an M3: I14 14.3 s with 2, 14.1 s with 3, 14.6 s with 4 */
+#endif
+
 #ifdef CONTIGUOUS_RI
 #define RI_OFFSET FBsize
 #define RI_OFFSET1 FBsize
@@ -48,6 +52,80 @@ u32_t*ASM_ATTR lasched0_1(u32_t*,u32_t*,u32_t*,u32_t,u32_t**,u32_t);
 u32_t*ASM_ATTR lasched1_1(u32_t*,u32_t*,u32_t*,u32_t,u32_t**,u32_t);
 u32_t*ASM_ATTR lasched2_1(u32_t*,u32_t*,u32_t*,u32_t,u32_t**,u32_t);
 u32_t*ASM_ATTR lasched3_1(u32_t*,u32_t*,u32_t*,u32_t,u32_t**,u32_t);
+
+#if !defined(LASIEVE_X86_ASM) && LASCHED_LANES > 1
+/* the first ij of a prime for oddness type ot != 0, as in lasched below */
+static inline u32_t
+lasched_first_ij(u32_t r0, u32_t r1, u32_t ot, u32_t ot_mask, u32_t ot_tester)
+{
+	u64_t ij0 = 0;
+	if ((r0 & ot_mask) == ot_tester)ij0 = r0;
+	else {
+		if ((r1 & ot_mask) == (ot_tester ^ n_i))ij0 = r1;
+		else {
+			if ((r0 & (n_i - 1)) <= (r1 & (n_i - 1)) && r0 <= r1) {
+				if ((r0 & (n_i - 1)) == (r1 & (n_i - 1)))ij0 = r1 - r0;
+				else ij0 = n_i;
+				if (ot != 2)
+					Schlendrian("Exceptional situation for oddness type %u ?\n",
+						ot);
+			}
+			else ij0 = (u64_t)r0 + r1;
+		}
+	}
+	return (u32_t)((ij0 + ((~ot_tester) & n_i)) / 2);
+}
+
+/* Without x86 assembly (arm64): schedule LASCHED_LANES primes side by side,
+   as many groups as fit before ij_ptr_ub; the caller does the rest.  Each
+   walk is a short chain with an unpredictable end, and its stores go to
+   scattered buckets; several at once overlap both.  ot == 0 continues from
+   *ij_ptr, otherwise the first ij comes from the roots. */
+static inline void
+lasched_lanes(u32_t** ri_p, u32_t** ij_ptr_p, u32_t* ij_ptr_ub, u32_t ij_ub,
+	u32_t** sched_ptr, u32_t* fbi_offs_p, u32_t ot, u32_t ot_mask, u32_t ot_tester)
+{
+	enum { L = LASCHED_LANES };
+	u32_t* ri = *ri_p, * ij_ptr = *ij_ptr_p, fbi_offs = *fbi_offs_p;
+
+	while (ij_ptr + L <= ij_ptr_ub) {
+		u32_t r0[L], r1[L], a[L], b[L], ijl[L], tag[L];
+		int l, all;
+
+		for (l = 0; l < L; l++) {
+			r0[l] = ri[l * RI_INCR];
+			r1[l] = ri[l * RI_INCR + RI_OFFSET1];
+			a[l] = n_i - (r0[l] & (n_i - 1));
+			b[l] = n_i - (r1[l] & (n_i - 1));
+			ijl[l] = ot == 0 ? ij_ptr[l] : lasched_first_ij(r0[l], r1[l], ot, ot_mask, ot_tester);
+			tag[l] = (fbi_offs + l) << U16_SHIFT;
+		}
+		for (;;) {
+			all = 1;
+			for (l = 0; l < L; l++) all &= ijl[l] < ij_ub;
+			if (!all) break;
+			for (l = 0; l < L; l++) {
+				u32_t i = ijl[l] & (n_i - 1);
+				*(sched_ptr[ijl[l] >> L1_BITS]++) = tag[l] | (ijl[l] & (L1_SIZE - 1));
+				ijl[l] += (i < b[l] ? r0[l] : 0) + (i >= a[l] ? r1[l] : 0);
+			}
+		}
+		for (l = 0; l < L; l++) {
+			u32_t x = ijl[l];
+			while (x < ij_ub) {
+				u32_t i = x & (n_i - 1);
+				*(sched_ptr[x >> L1_BITS]++) = tag[l] | (x & (L1_SIZE - 1));
+				x += (i < b[l] ? r0[l] : 0) + (i >= a[l] ? r1[l] : 0);
+			}
+			ij_ptr[l] = x - ij_ub;
+		}
+		ij_ptr += L;
+		ri += L * RI_INCR;
+		fbi_offs += L;
+	}
+	*ri_p = ri; *ij_ptr_p = ij_ptr; *fbi_offs_p = fbi_offs;
+}
+#endif
 
 u32_t*
 lasched_1(ri,ij_ptr,ij_ptr_ub,n1_j,sched_ptr,fbi_offs,ot)
@@ -253,6 +331,9 @@ u32_t*ri,*ij_ptr,*ij_ptr_ub,n1_j,**sched_ptr,fbi_offs,ot,FBsize;
 		}
 #endif
 
+#if !defined(LASIEVE_X86_ASM) && LASCHED_LANES > 1
+		lasched_lanes(&ri, &ij_ptr, ij_ptr_ub, ij_ub, sched_ptr, &fbi_offs, 0, 0, 0);
+#endif
 		while (ij_ptr < ij_ptr_ub) {
 			u16_t a, b;
 
@@ -417,6 +498,9 @@ u32_t*ri,*ij_ptr,*ij_ptr_ub,n1_j,**sched_ptr,fbi_offs,ot,FBsize;
 		}
 #endif
 
+#if !defined(LASIEVE_X86_ASM) && LASCHED_LANES > 1
+		lasched_lanes(&ri, &ij_ptr, ij_ptr_ub, ij_ub, sched_ptr, &fbi_offs, ot, ot_mask, ot_tester);
+#endif
 		while (ij_ptr < ij_ptr_ub) {
 			u16_t a, b;
 
