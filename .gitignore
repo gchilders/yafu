@@ -30,5 +30,6 @@ config.mk
 
 
 
-# lasieve5_64 Windows BOINC build output (build_boinc_windows.sh)
+# lasieve5_64 BOINC build output (build_boinc_windows.sh, build_boinc_mac.sh)
 /factor/lasieve5_64/boinc-win/
+/factor/lasieve5_64/boinc-mac/

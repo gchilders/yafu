@@ -48,6 +48,8 @@ GMP_INCDIR ?= /usr/include
 ARCH       ?= native
 TUNE       ?=
 
+TARGET_FLAGS ?=
+
 ARCH_FLAGS := -march=$(ARCH) $(if $(TUNE),-mtune=$(TUNE))
 
 ifndef DETECTED_OS
@@ -81,6 +83,9 @@ ifeq ($(DEBUG),1)
     CFLAGS := $(filter-out -Ofast $(ARCH_FLAGS),$(CFLAGS))
     CFLAGS += -O0 -g
 endif
+
+# e.g. -arch x86_64 -mmacosx-version-min=10.13, forwarded from the parent
+CFLAGS += $(TARGET_FLAGS)
 
 
 # --- AVX-512 feature flags ---------------------------------------------------

@@ -32,6 +32,8 @@
 #   TUNE          -mtune value                (default: none)
 #                 For distributable binaries use e.g. ARCH=x86-64 TUNE=generic,
 #                 or ARCH=x86-64-v4 TUNE=generic AVX512_ALL=1.
+#   TARGET_FLAGS  Extra flags for every compile and link, e.g. on macOS
+#                 "-arch x86_64 -mmacosx-version-min=10.13" (default: none)
 #
 # BOINC build (main() then talks to the BOINC client):
 #   BOINC=1       Define HAVE_BOINC, link libboinc_api/libboinc with $(CXX)
@@ -68,6 +70,8 @@ GMP_INCDIR ?= /usr/include
 GMP_LIBDIR ?= /usr/lib
 ARCH       ?= native
 TUNE       ?=
+
+TARGET_FLAGS ?=
 
 ARCH_FLAGS := -march=$(ARCH) $(if $(TUNE),-mtune=$(TUNE))
 
@@ -115,7 +119,7 @@ GMP_LIB := $(GMP_LIBDIR)/libgmp.a
 #
 CFLAGS_BASE := \
     -Wall -Wno-unused-variable -Wno-unused-function \
-    -Ofast -fomit-frame-pointer $(ARCH_FLAGS) -funroll-loops \
+    -Ofast -fomit-frame-pointer $(TARGET_FLAGS) $(ARCH_FLAGS) -funroll-loops \
     -I$(GMP_INCDIR) -L$(GMP_LIBDIR) -I../../include -fcommon
 
 ifeq ($(DETECTED_OS),Windows)
@@ -156,6 +160,7 @@ endif
 # doesn't need its own hardcoded values.  AVX512 flags are appended below.
 ASM_FLAGS := CC=$(CC) GMP_INCDIR=$(GMP_INCDIR) DETECTED_OS=$(DETECTED_OS) \
              ARCH=$(ARCH) $(if $(TUNE),TUNE=$(TUNE)) \
+             $(if $(TARGET_FLAGS),TARGET_FLAGS="$(TARGET_FLAGS)") \
              $(if $(DEBUG),DEBUG=$(DEBUG))
 
 
@@ -329,7 +334,7 @@ gnfs-lasieve4I%e: $(LASIEVE_E_PREREQS)
 # one flavour's .ro and links two flavours into one executable that picks
 # the AVX-512 or generic code path at startup (cpu_dispatch.c).
 gnfs-lasieve4I%e.ro: $(LASIEVE_E_PREREQS)
-	$(CC) -nostdlib -r -o $@ $^
+	$(CC) $(TARGET_FLAGS) -nostdlib -r -o $@ $^
 
 gnfs-lasieve4I%f: gnfs-lasieve4fI%.o if.o input-poly-orig.o libgmp-aux.a redu2.o \
 	recurrence6.o fbgen.o fbgen64.o real-poly-aux.o mpqs.o \
