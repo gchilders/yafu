@@ -1166,6 +1166,12 @@ int main(int argc, char** argv)
             int ends_in_newline = 1;
             long complete_end = 0;  /* offset just past the last '\n' */
 
+            /* Where reading starts in "a+" mode is up to the C library:
+               glibc and the Windows CRT start at the beginning of the file,
+               macOS and the BSDs at the end, which would leave nothing to
+               read and the run would restart from the first special-q. */
+            rewind(g_ofile);
+
             while (fgets(buf, LINE_BUF_SIZE, g_ofile)) {
                 size_t len = strlen(buf);
                 ret = parse_q_from_line(buf);
